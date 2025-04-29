@@ -16,4 +16,26 @@ public class UpdateMeta implements Serializable {
     private String version;
     private String description;
     private String releaseDate;
+
+    public int compareTo(UpdateMeta other) {
+        var thisVersion = parseVersion(this.version);
+        var otherVersion = parseVersion(other.version);
+
+        for (int i = 0; i < Math.min(thisVersion.length, otherVersion.length); i++) {
+            if (thisVersion[i] != otherVersion[i]) {
+                return Integer.compare(thisVersion[i], otherVersion[i]);
+            }
+        }
+
+        return Integer.compare(thisVersion.length, otherVersion.length);
+    }
+
+    public static int[] parseVersion(String version) {
+        String[] parts = version.split("\\.");
+        int[] parsedVersion = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            parsedVersion[i] = Integer.parseInt(parts[i]);
+        }
+        return parsedVersion;
+    }
 }
