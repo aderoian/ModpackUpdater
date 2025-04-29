@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "update-notifier",
+  "version": "${version}",
+
+  "name": "update-notifier",
+  "description": "Notifies user's if their modpack is outdated.",
+  "authors": [
+    "aderoian"
+  ],
+  "contact": {},
+
+  "license": "GPL-3.0",
+  "icon": "assets/update-notifier/icon.png",
+
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.armenderoian.updateNotifier.client.UpdateNotifierClient"],
+    "main": ["dev.armenderoian.updateNotifier.UpdateNotifier"]
+  },
+
+  "mixins": [
+    "update-notifier.mixins.json"
+  ],
+
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}

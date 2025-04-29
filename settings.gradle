@@ -1,0 +1,11 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        maven { url 'https://maven.fabricmc.net/' } // ADD this so loom is found
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'modpack-updater'
+include 'common', 'notifier', 'updater'
+
