@@ -11,7 +11,7 @@ import java.io.Serializable;
 @Builder
 @ToString
 @AllArgsConstructor
-public class UpdateMeta implements Serializable {
+public class UpdateMeta implements Serializable, Comparable<UpdateMeta> {
     private String name;
     private String version;
     private String description;
@@ -37,5 +37,12 @@ public class UpdateMeta implements Serializable {
             parsedVersion[i] = Integer.parseInt(parts[i]);
         }
         return parsedVersion;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        return version.equals(((UpdateMeta) obj).version);
     }
 }

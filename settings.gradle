@@ -7,5 +7,5 @@ pluginManagement {
 }
 
 rootProject.name = 'modpack-updater'
-include 'common', 'notifier', 'updater'
+include 'common', 'notifier', 'updater', 'update-api'
 
