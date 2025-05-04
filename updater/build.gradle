@@ -1,3 +1,7 @@
+plugins {
+    id("com.gradleup.shadow") version "8.3.3"
+}
+
 group = 'dev.armenderoian'
 version = '1.0-SNAPSHOT'
 
@@ -6,10 +10,40 @@ repositories {
 }
 
 dependencies {
+    implementation("ch.qos.logback:logback-core:1.5.18")
+    implementation("ch.qos.logback:logback-classic:1.5.18")
+
+    implementation("com.google.code.gson:gson:2.13.1")
+    implementation(project(":common"))
+
+    compileOnly("org.projectlombok:lombok:1.18.38")
+    annotationProcessor("org.projectlombok:lombok:1.18.38")
+
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
 }
 
 test {
     useJUnitPlatform()
+}
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'dev.armenderoian.update.updater.Updater',
+        )
+    }
+}
+
+shadowJar {
+    archiveClassifier.set("shadow")
+    mergeServiceFiles()
+
+    configurations = [project.configurations.runtimeClasspath, project.configurations.compileClasspath, project.configurations.shadow]
+
+    //minimize() // minimize aggressively (optional)
+}
+
+build {
+    dependsOn(shadowJar)
 }
