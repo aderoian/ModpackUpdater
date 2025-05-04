@@ -21,12 +21,14 @@ public final class Config implements Serializable {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     private String updateUrl;
+    private String channel;
     @Setter
     private UpdateMeta currentVersion;
 
     public static Config createDefault() {
         Config config = new Config();
         config.updateUrl = "";
+        config.channel = "stable";
         config.currentVersion = new UpdateMeta(
                 "Fresh Install",
                 "0.0.0",

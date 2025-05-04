@@ -37,11 +37,12 @@ public class Updater {
         UpdateMeta currentVersion = config.getCurrentVersion();
         logger.info("Current version: v{}", currentVersion.getVersion());
 
+        String channel = config.getChannel();
         UpdateMeta latest;
         Update update;
 
         try (var client = HttpClient.newHttpClient()) {
-            var response = GSON.fromJson(client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/latest")).build(),
+            var response = GSON.fromJson(client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/" + channel + "/latest")).build(),
                     HttpResponse.BodyHandlers.ofString()).body(), new TypeToken<Response<UpdateMeta>>() {});
             if (response.getCode() != 200 || response.getData() == null) {
                 logger.error("Failed to fetch latest version: {}", response.getMessage());
@@ -59,7 +60,7 @@ public class Updater {
             }
 
             logger.info("Fetching update manifest...");
-            var manifest = GSON.fromJson(client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/getFull/" + currentVersion.getVersion())).build(),
+            var manifest = GSON.fromJson(client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/" + channel + "/getFull/" + currentVersion.getVersion())).build(),
                     HttpResponse.BodyHandlers.ofString()).body(), new TypeToken<Response<Update>>() {});
             if (manifest.getCode() != 200 || manifest.getData() == null) {
                 logger.error("Failed to fetch update manifest: \n{}", manifest.getMessage());
