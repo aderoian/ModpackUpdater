@@ -148,29 +148,19 @@ public class UpdateAPI {
             return;
         }
 
-        var latestUpdate = latest.get(channel);
-        if (latestUpdate != null) {
-            sendResponse(ctx, 200, null, latestUpdate);
+        var update = getLatestUpdate(channel);
+        if (update == null) {
+            sendResponse(ctx, 404, "Latest update not found", null);
             return;
         }
-
-        var channelDir = updatesDir.resolve(channel);
-
-        var latestUpdateDir = channelDir.resolve("latest.json");
-        if (!latestUpdateDir.toFile().exists()) {
-            sendResponse(ctx, 404, "Latest update not found", null);
+        var full = ctx.queryParam("update");
+        if (full != null && full.equals("true")) {
+            var versions = getVersions(channel);
+            int latestIndex = versions.size() - 1;
+            var mergedUpdate = mergeUpdates(channel, 0, latestIndex);
+            sendResponse(ctx, 200, null, mergedUpdate);
         } else {
-            try (var reader = new BufferedReader(new FileReader(latestUpdateDir.toFile()))) {
-                var update = gson.fromJson(reader, UpdateMeta.class);
-                if (update == null) {
-                    sendResponse(ctx, 404, "Latest update not found", null);
-                } else {
-                    latest.put(channel, update);
-                    sendResponse(ctx, 200, null, update);
-                }
-            } catch (Exception e) {
-                sendResponse(ctx, 500, "Failed to read latest update", null);
-            }
+            sendResponse(ctx, 200, null, update.getMeta());
         }
     }
 
@@ -271,7 +261,9 @@ public class UpdateAPI {
 
     public static Update fetchUpdate(String channel, String version) {
         if (updateCache.containsKey(channel)) {
-            return updateCache.get(channel).getOrDefault(version, null);
+            if (updateCache.get(channel).containsKey(version)) {
+                return updateCache.get(channel).get(version);
+            }
         }
 
         var updateFile = getUpdateFile(channel, version);
