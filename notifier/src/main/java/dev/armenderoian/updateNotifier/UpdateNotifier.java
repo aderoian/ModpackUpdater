@@ -1,9 +1,11 @@
 package dev.armenderoian.updateNotifier;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import dev.armenderoian.updateNotifier.util.Config;
+import com.google.gson.reflect.TypeToken;
+import net.armenderoian.modpack.update.models.Response;
+import net.armenderoian.modpack.update.models.Update;
 import net.armenderoian.modpack.update.models.UpdateMeta;
+import net.armenderoian.modpack.update.util.Config;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
@@ -36,58 +38,53 @@ public class UpdateNotifier implements ModInitializer {
         });
     }
 
-    public static void checkForUpdates() {
+    public static Update checkForUpdates() {
         if (CONFIG.getCurrentVersion().getVersion().equals("0.0.0")) {
             LOGGER.warn("[UPDATE NOTIFIER]: The current version is not set. Please set the current version in the config file.");
-            return;
+            return null;
         }
 
         try (var client = HttpClient.newHttpClient()) {
-            client.sendAsync(HttpRequest.newBuilder()
+            var response = client.send(HttpRequest.newBuilder()
                     .GET()
-                    .uri(URI.create(CONFIG.getUpdateUrl() + "/latest"))
-                    .build(), HttpResponse.BodyHandlers.ofString()
-            ).thenApply(HttpResponse::body).thenAccept(body -> {
-                // Load the response body into a JsonObject
-                var response = GSON.fromJson(body, JsonObject.class);
+                    .uri(URI.create(CONFIG.getUpdateUrl() + "/" + CONFIG.getChannel() + "/latest?update=true"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
 
-                // Ensure the response is valid
-                if (!response.has("status")){
-                    LOGGER.error("[MALFORMED RESPONSE]: Missing 'status' field in response.");
-                    return;
-                }
+            if (response == null || response.statusCode() != 200) {
+                LOGGER.error("[ERROR FETCHING]: Failed to fetch the latest version.");
+                return null;
+            }
 
-                // Check the status code
-                var status = response.get("status").getAsInt();
-                if (status != 200) {
-                    LOGGER.error("[ERROR FETCHING]: ({}) {}", status, response.get("message").getAsString());
-                } else {
-                    // Check if the response contains the expected fields
-                    if (!response.has("meta")) {
-                        LOGGER.error("[MALFORMED RESPONSE]: Missing 'meta' field in response.");
-                        return;
+            var responseData = GSON.fromJson(response.body(), new TypeToken<Response<Update>>() {});
+
+            var status = responseData.getCode();
+            if (status != 200) {
+                LOGGER.error("[ERROR FETCHING]: ({}) {}", status, responseData.getMessage());
+                return null;
+            } else {
+                try {
+                    var update = responseData.getData();
+                    if (update == null) {
+                        LOGGER.error("[MALFORMED RESPONSE]: Empty 'meta' field in response.");
+                        return null;
                     }
 
-                    try {
-                        var meta = GSON.fromJson(response.get("meta"), UpdateMeta.class);
-                        if (meta == null) {
-                            LOGGER.error("[MALFORMED RESPONSE]: Empty 'meta' field in response.");
-                            return;
-                        }
-
-                        // Check if the current version is less than the latest version
-                        if (CONFIG.getCurrentVersion().compareTo(meta) < 0) {
-                            LOGGER.info("There is an update available: v{} -> v{}", CONFIG.getCurrentVersion().getVersion(), meta.getVersion());
-                        } else {
-                            LOGGER.info("You are using the latest version.");
-                        }
-                    } catch (Exception e) {
-                        LOGGER.error("[MALFORMED RESPONSE]: Failed to parse 'meta' field.", e);
+                    // Check if the current version is less than the latest version
+                    if (CONFIG.getCurrentVersion().compareTo(update.getMeta()) < 0) {
+                        LOGGER.info("There is an update available: v{} -> v{}", CONFIG.getCurrentVersion().getVersion(), update.getMeta().getVersion());
+                        return update;
+                    } else {
+                        LOGGER.info("You are using the latest version.");
+                        return null;
                     }
+                } catch (Exception e) {
+                    LOGGER.error("[MALFORMED RESPONSE]: Failed to parse 'meta' field.", e);
+                    return null;
                 }
-            });
+            }
         } catch (Exception e) {
             LOGGER.error("[ERROR FETCHING]: failed to send HTTP request. ", e);
+            return null;
         }
     }
 
