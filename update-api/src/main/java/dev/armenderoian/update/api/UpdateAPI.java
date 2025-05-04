@@ -6,12 +6,10 @@ import com.google.gson.reflect.TypeToken;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.json.JavalinGson;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
+import net.armenderoian.modpack.update.models.Response;
 import net.armenderoian.modpack.update.models.Update;
 import net.armenderoian.modpack.update.models.UpdateEntry;
 import net.armenderoian.modpack.update.models.UpdateMeta;
-import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -345,20 +343,4 @@ public class UpdateAPI {
                 .entries(changes.values().toArray(new UpdateEntry[0]))
                 .build();
     }
-
-    @Getter
-    @AllArgsConstructor
-    public static class Response<T> implements Serializable {
-        private final int code;
-        @Nullable
-        private final String message;
-        @Nullable
-        private final T data;
-
-        @Override
-        public String toString() {
-            return super.toString();
-        }
-    }
-
 }
