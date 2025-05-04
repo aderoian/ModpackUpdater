@@ -30,9 +30,10 @@ public class Updater {
     public static void main(String[] args) {
         logger.info("Starting ModPack Updater...");
 
-        var configPath = Path.of("../config");
+        var configPath = Path.of("./config");
         Config config = Config.load(configPath);
         if (configPath.toFile().exists()) Config.save(configPath, config);
+        logger.info("Loaded config: {}", configPath.toAbsolutePath());
 
         UpdateMeta currentVersion = config.getCurrentVersion();
         logger.info("Current version: v{}", currentVersion.getVersion());
@@ -71,7 +72,7 @@ public class Updater {
             logger.info("Update manifest: {}", GSON.toJson(update));
 
             logger.info("Starting update to: v{}", latest.getVersion());
-            var updatePath = Path.of("./");
+            var updatePath = Path.of("./mods");
             updatePath.toFile().mkdirs();
 
             int curr = 0;
@@ -116,7 +117,7 @@ public class Updater {
 
                 logger.info("Downloading: {} -> {}", entry.getDownloadUrl(), updatedModFilename);
                 var downloadResponse = client.send(HttpRequest.newBuilder().GET().uri(URI.create(entry.getDownloadUrl())).build(),
-                        HttpResponse.BodyHandlers.ofString());
+                        HttpResponse.BodyHandlers.ofByteArray());
                 if (downloadResponse.statusCode() != 200) {
                     logger.error("Failed to download file: {}", downloadResponse.body());
                     continue;
@@ -124,7 +125,7 @@ public class Updater {
 
                 try {
                     var file = updatePath.resolve(updatedModFilename);
-                    Files.writeString(file, downloadResponse.body());
+                    Files.write(file, downloadResponse.body());
                     logger.info("Downloaded: {} -> {}", entry.getDownloadUrl(), file);
                 } catch (IOException e) {
                     logger.error("Failed to write file: {}", updatedModFilename, e);
