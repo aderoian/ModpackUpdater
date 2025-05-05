@@ -77,7 +77,7 @@ public class UpdateAPI {
                     }
                 }
                 channels = new ArrayList<>(List.of(channelsString.replace("\"", "").split(",")));
-                logger.info("Using channels: {}", channels);
+                logger.info("Using channels: {}", Arrays.toString(channels.toArray()));
             } else {
                 logger.error("Unknown argument: {}", arg);
             }
