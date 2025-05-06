@@ -201,12 +201,7 @@ public class UpdateAPI {
         var versions = getVersions(channel);
         int latestIndex = versions.size() - 1;
         Update currentCtxVersion = fetchUpdate(channel, version);
-        if (currentCtxVersion == null) {
-            sendResponse(ctx, 404, "Update not found", null);
-            return;
-        }
-
-        int startingIndex = versions.indexOf(currentCtxVersion.getMeta()) + 1; // start from the next version from the current version
+        int startingIndex = currentCtxVersion == null ? 0 : versions.indexOf(currentCtxVersion.getMeta()) + 1; // start from the next version from the current version
 
         if (startingIndex > latestIndex) {
             sendResponse(ctx, 400, "Invalid version specified", null);
