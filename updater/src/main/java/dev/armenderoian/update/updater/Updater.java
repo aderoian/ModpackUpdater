@@ -25,9 +25,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.text.DateFormat;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 
@@ -73,14 +75,19 @@ public class Updater {
         Update update;
 
         try (var client = HttpClient.newHttpClient()) {
-            var response = GSON.fromJson(client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/" + channel + "/latest")).build(),
-                    HttpResponse.BodyHandlers.ofString()).body(), new TypeToken<Response<UpdateMeta>>() {});
-            if (response.getCode() != 200 || response.getData() == null) {
-                logger.error("Failed to fetch latest version: {}", response.getMessage());
+            var response = client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/" + channel + "/latest")).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                logger.error("Failed to fetch latest version (code: {})", response.statusCode());
                 return;
             }
 
-            latest = response.getData();
+            latest = GSON.fromJson(response.body(), new TypeToken<Response<UpdateMeta>>() {}).getData();
+            if (latest == null) {
+                logger.error("Failed to fetch latest version, not found in response.");
+                return;
+            }
+
             logger.info("Latest version: v{}", latest.getVersion());
 
             if (latest.getVersion().equals(currentVersion.getVersion())) {
@@ -91,14 +98,18 @@ public class Updater {
             }
 
             logger.info("Fetching update manifest...");
-            var manifest = GSON.fromJson(client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/" + channel + "/getFull/" + currentVersion.getVersion())).build(),
-                    HttpResponse.BodyHandlers.ofString()).body(), new TypeToken<Response<Update>>() {});
-            if (manifest.getCode() != 200 || manifest.getData() == null) {
-                logger.error("Failed to fetch update manifest: \n{}", manifest.getMessage());
+            var manifest = client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/" + channel + "/getFull/" + currentVersion.getVersion())).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (manifest.statusCode() != 200) {
+                logger.error("Failed to fetch update manifest (code: {})", manifest.statusCode());
                 return;
             }
 
-            update = manifest.getData();
+            update = GSON.fromJson(manifest.body(), new TypeToken<Response<Update>>() {}).getData();
+            if (update == null) {
+                logger.error("Failed to fetch update manifest, not found in response.");
+                return;
+            }
             logger.info("Update manifest: {}", GSON.toJson(update));
 
             logger.info("Starting update to: v{}", latest.getVersion());
@@ -132,17 +143,17 @@ public class Updater {
                 var updatedModFilename = entry.getFormattedFileName();
 
                 logger.info("Downloading: {} -> {}", entry.getDownloadUrl(), updatedModFilename);
+                var file = updatePath.resolve(updatedModFilename);
+                try {
                 var downloadResponse = client.send(HttpRequest.newBuilder().GET().uri(URI.create(entry.getDownloadUrl())).build(),
-                        HttpResponse.BodyHandlers.ofByteArray());
+                        HttpResponse.BodyHandlers.ofFileDownload(file, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE));
                 if (downloadResponse.statusCode() != 200) {
                     logger.error("Failed to download file: {}", downloadResponse.body());
                     continue;
                 }
 
-                try {
-                    var file = updatePath.resolve(updatedModFilename);
-                    Files.write(file, downloadResponse.body());
-                    logger.info("Downloaded: {} -> {}", entry.getDownloadUrl(), file);
+                logger.info("Downloaded: {} -> {}", entry.getDownloadUrl(), file);
+
                 } catch (IOException e) {
                     logger.error("Failed to write file: {}", updatedModFilename, e);
                 }
@@ -162,6 +173,8 @@ public class Updater {
         var mods = listMods(path);
 
         StringBuilder modList = new StringBuilder();
+        AtomicInteger i = new AtomicInteger();
+        int total = mods.size();
         mods.forEach((mod, info) -> {
             var modId = info.getFirst();
             var modJson = info.getSecond();
@@ -183,6 +196,8 @@ public class Updater {
                     .append("    Download URL: ")
                     .append(downloadUrl != null ? downloadUrl : "NOT FOUND")
                     .append("\n");
+
+            logger.info("Read mod [{}/{}]: {}", i.getAndIncrement(), total, modName);
         });
         logger.info("Dumping modpack...\n{}", modList);
     }
@@ -205,7 +220,18 @@ public class Updater {
         String apiKey = scanner.nextLine();
         String date = DateFormat.getDateTimeInstance().format(new Date());
 
-        logger.info("Creating update manifest...");
+        if (version.isEmpty() || name.isEmpty() || description.isEmpty() || channel.isEmpty() || updateUrl.isEmpty()) {
+            logger.error("Missing required fields");
+            return;
+        }
+        if (backupUrl.isEmpty()) {
+            logger.warn("No backup URL provided, any mod not found on Modrinth will not be downloadable.");
+        }
+        if (apiKey.isEmpty()) {
+            logger.warn("No API key provided, the update manifest will not be uploaded.");
+        }
+        logger.info("Creating update manifest for version: v{}", version);
+
         var meta = UpdateMeta.builder()
                 .version(version)
                 .name(name)
@@ -221,7 +247,7 @@ public class Updater {
             var response = client.send(HttpRequest.newBuilder().GET().uri(URI.create(updateUrl + "/" + channel + "/latest?update=true")).build(),
                     HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
-                logger.error("Failed to fetch latest version");
+                logger.warn("Failed to fetch latest version");
             } else {
                 var responseData = GSON.fromJson(response.body(), new TypeToken<Response<Update>>() {});
                 if (responseData.getCode() != 200 || responseData.getData() == null) {
@@ -237,6 +263,8 @@ public class Updater {
 
         var latestMods = latest != null ? Arrays.stream(latest.getEntries()).collect(Collectors.toMap(UpdateEntry::getId, entry -> entry)) : new HashMap<String, UpdateEntry>();
         var finalizedMods = new ArrayList<UpdateEntry>();
+
+        // Iterate over current mods and compare with latest mods
         for (var entry : currentMods.entrySet()) {
             var modId = entry.getKey();
             var modInfo = entry.getValue();
@@ -245,21 +273,32 @@ public class Updater {
             var modName = modJson.get("name").getAsString();
             var modVersion = modJson.get("version").getAsString();
 
+            var modFileName = modInfo.getFirst();
+            var downloadUrl = getDownloadUrl(path, modId, modFileName, backupUrl);
+
+            // Check if the mod is in the latest mods
+            // If so, if different version then mark as CHANGED. If REMOVED in latest but present in current, mark as ADDED
             if (latestMods.containsKey(modId)) {
                 var latestMod = latestMods.get(modId);
                 if (!modVersion.equals(latestMod.getVersion()) || latestMod.getType() == UpdateEntry.Type.REMOVED) {
+                    var status = latestMod.getType() == UpdateEntry.Type.REMOVED ? UpdateEntry.Type.ADDED :UpdateEntry.Type.CHANGED;
                     finalizedMods.add(UpdateEntry.builder()
-                            .type(latestMod.getType() == UpdateEntry.Type.REMOVED ? UpdateEntry.Type.ADDED :UpdateEntry.Type.CHANGED)
+                            .type(status)
                             .id(modId)
                             .name(modName)
                             .version(modVersion)
-                            .downloadUrl(latestMod.getDownloadUrl())
-                            .fileName(latestMod.getFileName())
+                            .downloadUrl(downloadUrl != null ? downloadUrl.replace(".disabled", "") : null)
+                            .fileName(modFileName)
                             .build());
+
+                    if (status == UpdateEntry.Type.CHANGED) {
+                        logger.info("Mod changed: {} (v{} -> v{})", modName, modVersion, latestMod.getVersion());
+                    } else {
+                        logger.info("Mod removed: {} (v{})", modName, modVersion);
+                    }
                 }
             } else {
-                var modFileName = modInfo.getFirst();
-                var downloadUrl = getDownloadUrl(path, modId, modFileName, backupUrl);
+                // If the mod was not in the latest mods, it has been added
 
                 finalizedMods.add(UpdateEntry.builder()
                         .type(UpdateEntry.Type.ADDED)
@@ -269,9 +308,12 @@ public class Updater {
                         .downloadUrl(downloadUrl)
                         .fileName(modFileName)
                         .build());
+
+                logger.info("Mod added: {} (v{})", modName, modVersion);
             }
         }
 
+        // Iterate over latest mods and check if any were removed
         for (var entry : latestMods.entrySet()) {
             var modId = entry.getKey();
             var modInfo = entry.getValue();
@@ -285,6 +327,8 @@ public class Updater {
                         .downloadUrl(modInfo.getDownloadUrl())
                         .fileName(modInfo.getFileName())
                         .build());
+
+                logger.info("Mod removed: {} (v{})", modInfo.getName(), modInfo.getVersion());
             }
         }
 
@@ -390,7 +434,7 @@ public class Updater {
             var response = client.send(HttpRequest.newBuilder().GET().uri(URI.create("https://api.modrinth.com/v2/version_file/" + fileHash)).build(),
                     HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
-                logger.warn("Failed to find mod '{}' on Modrinth: {}. Using backup URL", modId, response.body());
+                logger.warn("Failed to find mod '{}' on Modrinth: (Code: {}). Using backup URL", modId, response.statusCode());
             } else {
                 var body = GSON.fromJson(response.body(), JsonObject.class);
                 downloadUrl = "https://cdn.modrinth.com/data/" + body.get("project_id").getAsString() + "/versions/" + body.get("id").getAsString() + "/" + filename.replace(".disabled", "");
