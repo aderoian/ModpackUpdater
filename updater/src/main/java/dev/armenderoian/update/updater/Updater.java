@@ -25,6 +25,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.text.DateFormat;
@@ -62,6 +63,29 @@ public class Updater {
     }
 
     public static void updateModpack() {
+        long pid = ProcessHandle.current().pid();
+        Path lockFile = Paths.get("update.lock");
+        if (Files.exists(lockFile)) {
+            try {
+                String pidString = Files.readString(lockFile);
+                long existingPid = Long.parseLong(pidString);
+                if (existingPid != pid) {
+                    logger.error("Another instance of the updater is already running (PID: {})", existingPid);
+                    return;
+                }
+            } catch (IOException e) {
+                logger.error("Failed to read update.lock", e);
+                return;
+            }
+        }
+
+        try {
+            Files.writeString(lockFile, Long.toString(pid), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            logger.error("Failed to write update.lock", e);
+            return;
+        }
+
         var configPath = Path.of("./config");
         Config config = Config.load(configPath);
         if (configPath.toFile().exists()) Config.save(configPath, config);
@@ -145,10 +169,23 @@ public class Updater {
                 logger.info("Downloading: {} -> {}", entry.getDownloadUrl(), updatedModFilename);
                 var file = updatePath.resolve(updatedModFilename);
                 try {
-                var downloadResponse = client.send(HttpRequest.newBuilder().GET().uri(URI.create(entry.getDownloadUrl())).build(),
-                        HttpResponse.BodyHandlers.ofFileDownload(file, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE));
+                var downloadResponse = client.send(HttpRequest.newBuilder().GET().uri(URI.create(encodePath(entry.getDownloadUrl()))).build(),
+                        HttpResponse.BodyHandlers.ofInputStream());
                 if (downloadResponse.statusCode() != 200) {
                     logger.error("Failed to download file: {}", downloadResponse.body());
+                    continue;
+                }
+
+                try (var in = downloadResponse.body()) {
+                    try (var out = Files.newOutputStream(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, bytesRead);
+                        }
+                    }
+                } catch (IOException e) {
+                    logger.error("Failed to write file: {}", updatedModFilename, e);
                     continue;
                 }
 
@@ -165,6 +202,12 @@ public class Updater {
             logger.info("Update complete!");
         } catch (IOException | InterruptedException e) {
             logger.error("Failed while updating", e);
+        }
+
+        try {
+            Files.deleteIfExists(lockFile);
+        } catch (IOException e) {
+            logger.error("Failed to delete update.lock", e);
         }
     }
 
@@ -444,5 +487,13 @@ public class Updater {
         }
 
         return downloadUrl != null ? downloadUrl : (backupUrl != null ? backupUrl + "/" + filename : null);
+    }
+
+    private static String encodePath(String path) {
+        // Replace illegal characters manually (common ones like spaces, brackets, etc.)
+        return path
+                .replace("[", "%5B")
+                .replace("]", "%5D")
+                .replace(" ", "%20");
     }
 }

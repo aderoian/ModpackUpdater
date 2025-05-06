@@ -38,20 +38,60 @@ public class UpdateNotifier implements ModInitializer {
         });
     }
 
-    public static Update checkForUpdates() {
-//        if (CONFIG.getCurrentVersion().getVersion().equals("0.0.0")) {
-//            LOGGER.warn("[UPDATE NOTIFIER]: The current version is not set. Please set the current version in the config file.");
-//            return null;
-//        }
-
+    public static boolean checkForUpdates() {
         try (var client = HttpClient.newHttpClient()) {
             var response = client.send(HttpRequest.newBuilder()
                     .GET()
-                    .uri(URI.create(CONFIG.getUpdateUrl() + "/" + CONFIG.getChannel() + "/latest?update=true"))
+                    .uri(URI.create(CONFIG.getUpdateUrl() + "/" + CONFIG.getChannel() + "/latest"))
                     .build(), HttpResponse.BodyHandlers.ofString());
 
             if (response == null || response.statusCode() != 200) {
                 LOGGER.error("[ERROR FETCHING]: Failed to fetch the latest version.");
+                return false;
+            }
+
+            var responseData = GSON.fromJson(response.body(), new TypeToken<Response<UpdateMeta>>() {});
+
+            var status = responseData.getCode();
+            if (status != 200) {
+                LOGGER.error("[ERROR FETCHING]: ({}) {}", status, responseData.getMessage());
+                return false;
+            } else {
+                try {
+                    var update = responseData.getData();
+                    if (update == null) {
+                        LOGGER.error("[MALFORMED RESPONSE]: Update meta not found.");
+                        return false;
+                    }
+
+                    // Check if the current version is less than the latest version
+                    if (CONFIG.getCurrentVersion().compareTo(update) < 0) {
+                        LOGGER.info("There is an update available: v{} -> v{}", CONFIG.getCurrentVersion().getVersion(), update.getVersion());
+                        return true;
+                    } else {
+                        LOGGER.info("You are using the latest version.");
+                        return false;
+                    }
+                } catch (Exception e) {
+                    LOGGER.error("[MALFORMED RESPONSE]: Failed to parse 'meta' field.", e);
+                    return false;
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("[ERROR FETCHING]: failed to send HTTP request. ", e);
+            return false;
+        }
+    }
+
+    public static Update getLatestUpdate(String currentVersion) {
+        try (var client = HttpClient.newHttpClient()) {
+            var response = client.send(HttpRequest.newBuilder()
+                    .GET()
+                    .uri(URI.create(CONFIG.getUpdateUrl() + "/" + CONFIG.getChannel() + "/getFull/" + currentVersion))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+
+            if (response == null || response.statusCode() != 200) {
+                LOGGER.error("[ERROR FETCHING]: Failed to fetch the latest update.");
                 return null;
             }
 
@@ -71,14 +111,12 @@ public class UpdateNotifier implements ModInitializer {
 
                     // Check if the current version is less than the latest version
                     if (CONFIG.getCurrentVersion().compareTo(update.getMeta()) < 0) {
-                        LOGGER.info("There is an update available: v{} -> v{}", CONFIG.getCurrentVersion().getVersion(), update.getMeta().getVersion());
                         return update;
                     } else {
-                        LOGGER.info("You are using the latest version.");
                         return null;
                     }
                 } catch (Exception e) {
-                    LOGGER.error("[MALFORMED RESPONSE]: Failed to parse 'meta' field.", e);
+                    LOGGER.error("[MALFORMED RESPONSE]: Failed to parse response", e);
                     return null;
                 }
             }

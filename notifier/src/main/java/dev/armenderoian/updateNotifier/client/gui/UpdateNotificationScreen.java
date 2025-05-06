@@ -47,16 +47,18 @@ public class UpdateNotificationScreen extends Screen {
 
         this.updateButton = this.addDrawableChild(ButtonWidget.builder(
                 Text.of("Update Now"), (pressed) -> {
-                    try {
-                        var file = FabricLoader.getInstance().getGameDir().resolve("mods").resolve("updater-1.0-SNAPSHOT.jar").toFile();
+                    Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                        try {
+                            var file = FabricLoader.getInstance().getGameDir().resolve("mods").resolve("updater-1.0-SNAPSHOT.jar").toFile();
 
-                        new ProcessBuilder("java", "-jar", file.getAbsolutePath())
-                                .directory(FabricLoader.getInstance().getGameDir().toFile())
-                                .inheritIO()
-                                .start();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
+                            new ProcessBuilder("java", "-jar", file.getAbsolutePath())
+                                    .directory(FabricLoader.getInstance().getGameDir().toFile())
+                                    .inheritIO()
+                                    .start();
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }));
 
                     MinecraftClient.getInstance().scheduleStop();
                 }).dimensions(this.width / 2 - 155, this.height * 5 / 6, 150, 20).build());

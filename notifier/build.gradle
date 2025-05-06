@@ -1,6 +1,7 @@
 plugins {
     id 'fabric-loom' version '1.10-SNAPSHOT'
     id 'maven-publish'
+    id("com.gradleup.shadow") version "8.3.3"
 }
 
 version = project.mod_version
@@ -26,7 +27,7 @@ dependencies {
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    implementation project(":common")
+    shadow (implementation(project(":common")))
 }
 
 processResources {
@@ -51,8 +52,20 @@ java {
 
 jar {
     from("LICENSE") {
-        rename { "${it}_${project.archivesBaseName}"}
+        rename { "${it}_${project.archivesBaseName}" }
     }
+}
+
+shadowJar {
+    archiveClassifier = "shadow"
+    configurations = [project.configurations.shadow]
+
+    minimize() // minimize aggressively (optional)
+}
+
+remapJar {
+    dependsOn(shadowJar)
+    inputFile = tasks.shadowJar.archiveFile
 }
 
 // configure the maven publication
