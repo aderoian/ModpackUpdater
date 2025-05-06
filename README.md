@@ -87,7 +87,7 @@ server {
 - `update`: If true, the endpoint will return the latest update including mods, else it will only return the latest update metadata.
 
 Status Code: 200
-```json
+```json5
 {
   "code": 200,
   "data": {
@@ -106,14 +106,14 @@ Status Code: 200
         "downloadUrl": "https://example.com/mod.jar",
         "fileName": "mod.jar"
       },
-      ...
+      //...
     ]
   }
 }
 ```
 
 Status Code: 404
-```json
+```json5
 {
   "code": 404,
   "message": "Latest update not found"
@@ -125,7 +125,7 @@ Status Code: 404
 - `version`: The version to get the update from. This is a required field. The version must be in the format of `major.minor.patch` (i.e. 1.0.0)
 
 Status Code: 200
-```json
+```json5
 {
   "code": 200,
   "data": {
@@ -144,14 +144,14 @@ Status Code: 200
         "downloadUrl": "https://example.com/mod.jar",
         "fileName": "mod.jar"
       },
-      ...
+      //...
     ]
   }
 }
 ```
 
 Status Code: 404
-```json
+```json5
 {
   "code": 404,
   "message": "Update not found"
@@ -166,7 +166,7 @@ This endpoint will return a merge of updates from one channel in the range from 
 - `version`: The version to get the update from. This is a required field. The version must be in the format of `major.minor.patch` (i.e. 1.0.0)
 
 Status Code: 200
-```json
+```json5
 {
   "code": 200,
   "data": {
@@ -185,28 +185,28 @@ Status Code: 200
         "downloadUrl": "https://example.com/mod.jar",
         "fileName": "mod.jar"
       },
-      ...
+      //...
     ]
   }
 }
 ```
 
 Status Code: 404
-```json
+```json5
 {
   "code": 404,
   "message": "Latest update not found"
 }
 ```
 
-**POST** `/{channel}/create`
+### **POST** `/{channel}/create`
 - `channel`: The channel to create the update in. This is a required field. The channel must be one of the channels specified in the RestAPI setup.
 
 Headers:
 - `X-API-Key`: The api key used to authenticate. This is a required field.
 
 Body:
-```json
+```json5
 {
   "name": "Version Name",
   "description": "Version Description",
@@ -221,7 +221,7 @@ Body:
       "downloadUrl": "https://example.com/mod.jar",
       "fileName": "mod.jar"
     },
-    ...
+    //...
   ]
 }
 ```
