@@ -39,10 +39,10 @@ public class UpdateNotifier implements ModInitializer {
     }
 
     public static Update checkForUpdates() {
-        if (CONFIG.getCurrentVersion().getVersion().equals("0.0.0")) {
-            LOGGER.warn("[UPDATE NOTIFIER]: The current version is not set. Please set the current version in the config file.");
-            return null;
-        }
+//        if (CONFIG.getCurrentVersion().getVersion().equals("0.0.0")) {
+//            LOGGER.warn("[UPDATE NOTIFIER]: The current version is not set. Please set the current version in the config file.");
+//            return null;
+//        }
 
         try (var client = HttpClient.newHttpClient()) {
             var response = client.send(HttpRequest.newBuilder()
