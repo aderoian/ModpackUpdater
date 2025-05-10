@@ -2,11 +2,14 @@ plugins {
     id 'java'
 }
 
-group = 'dev.armenderoian'
-version = '1.0-SNAPSHOT'
+version = project.mod_version
+group = project.maven_group
 
 subprojects {
     apply plugin: 'java'
+
+    version = project.mod_version
+    group = project.maven_group
 
     repositories {
         mavenCentral()
