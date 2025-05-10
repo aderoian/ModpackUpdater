@@ -29,6 +29,8 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.text.DateFormat;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.JarFile;
@@ -63,6 +65,8 @@ public class Updater {
     }
 
     public static void updateModpack() {
+        // Create a lock file.
+        // Check for existing lock file
         long pid = ProcessHandle.current().pid();
         Path lockFile = Paths.get("update.lock");
         if (Files.exists(lockFile)) {
@@ -77,43 +81,52 @@ public class Updater {
                 logger.error("Failed to read update.lock", e);
                 return;
             }
+        } else {
+            // Create the lock file
+            try {
+                Files.writeString(lockFile, Long.toString(pid), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            } catch (IOException e) {
+                logger.error("Failed to write update.lock", e);
+                return;
+            }
         }
 
-        try {
-            Files.writeString(lockFile, Long.toString(pid), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        } catch (IOException e) {
-            logger.error("Failed to write update.lock", e);
-            return;
-        }
-
+        // Load the config
         var configPath = Path.of("./config");
         Config config = Config.load(configPath);
         if (configPath.toFile().exists()) Config.save(configPath, config);
         logger.info("Loaded config: {}", configPath.toAbsolutePath());
 
+        // Read the current version
         UpdateMeta currentVersion = config.getCurrentVersion();
         logger.info("Current version: v{}", currentVersion.getVersion());
 
         String channel = config.getChannel();
-        UpdateMeta latest;
+        UpdateMeta latest = null;
         Update update;
 
+        var tmpDir = Path.of("./tmp/updater/" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")));
+        var updatePath = Path.of("./mods");
+        var toRemove = new ArrayList<Path>();
+        var toMove = new ArrayList<Pair<Path, Path>>();
+
+
+        // Start the update
+        boolean success = true;
         try (var client = HttpClient.newHttpClient()) {
+            // Fetch the latest version
             var response = client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/" + channel + "/latest")).build(),
                     HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                logger.error("Failed to fetch latest version (code: {})", response.statusCode());
-                return;
-            }
+            if (response.statusCode() != 200)
+                throw new RuntimeException("Failed to fetch latest version (code: " + response.statusCode() + ")");
 
             latest = GSON.fromJson(response.body(), new TypeToken<Response<UpdateMeta>>() {}).getData();
-            if (latest == null) {
-                logger.error("Failed to fetch latest version, not found in response.");
-                return;
-            }
+            if (latest == null)
+                throw new RuntimeException("Failed to fetch latest version, not found in response.");
 
             logger.info("Latest version: v{}", latest.getVersion());
 
+            // Check if we need to update
             if (latest.getVersion().equals(currentVersion.getVersion())) {
                 logger.info("You are already on the latest version.");
                 return;
@@ -121,59 +134,54 @@ public class Updater {
                 logger.info("A new version is available! Version: v{} - {}", latest.getVersion(), latest.getDescription());
             }
 
+            // Fetch the latest update
+            // API merges and missing updates into the latast update
             logger.info("Fetching update manifest...");
             var manifest = client.send(HttpRequest.newBuilder().GET().uri(URI.create(config.getUpdateUrl() + "/" + channel + "/getFull/" + currentVersion.getVersion())).build(),
                     HttpResponse.BodyHandlers.ofString());
-            if (manifest.statusCode() != 200) {
-                logger.error("Failed to fetch update manifest (code: {})", manifest.statusCode());
-                return;
-            }
+            if (manifest.statusCode() != 200)
+                throw new RuntimeException("Failed to fetch update manifest (code: " + manifest.statusCode() + ")");
 
             update = GSON.fromJson(manifest.body(), new TypeToken<Response<Update>>() {}).getData();
-            if (update == null) {
-                logger.error("Failed to fetch update manifest, not found in response.");
-                return;
-            }
-            logger.info("Update manifest: {}", GSON.toJson(update));
+            if (update == null)
+                throw new RuntimeException("Failed to fetch update manifest, not found in response.");
 
+            logger.info("Update manifest: {}", GSON.toJson(update));
+            // Begin the update
             logger.info("Starting update to: v{}", latest.getVersion());
-            var updatePath = Path.of("./mods");
+
+            // Create the directories for the update
+            tmpDir.toFile().mkdirs();
             updatePath.toFile().mkdirs();
 
-            int curr = 0;
+            int curr = 1;
             int total = update.getEntries().length;
-
             var mods = listMods(updatePath);
-            ;
+
             for (var entry : update.getEntries()) {
                 logger.info("Updating mod [{}/{}]: {}", curr++, total, entry.getName());
 
                 var oldModFilename = mods.containsKey(entry.getId()) ? mods.get(entry.getId()).getFirst() : null;
 
+                // If the the mod was not added, and exists on disk, delete it
                 if (entry.getType() != UpdateEntry.Type.ADDED && oldModFilename != null) {
-                    try {
-                        logger.info("Deleting mod file: {}", oldModFilename);
-                        Files.delete(updatePath.resolve(oldModFilename));
-                    } catch (IOException e) {
-                        logger.error("Failed to delete old mod file: {}", oldModFilename, e);
-                    }
-
-                    if (entry.getType() == UpdateEntry.Type.REMOVED) {
-                        logger.info("Mod file removed: {}", oldModFilename);
-                        continue;
-                    }
+                    logger.info("Deleting mod file: {}", oldModFilename);
+                    var removePath = updatePath.resolve(oldModFilename);
+                    if (!Files.exists(removePath))
+                        throw new RuntimeException("Trying to delete a file that does not exist: " + removePath.toAbsolutePath());
+                    toRemove.add(removePath);
+                    continue;
                 }
 
                 var updatedModFilename = entry.getFormattedFileName();
 
+                // If the mod was added, fetch it from the download URL
                 logger.info("Downloading: {} -> {}", entry.getDownloadUrl(), updatedModFilename);
-                var file = updatePath.resolve(updatedModFilename);
-                try {
+                var file = tmpDir.resolve(updatedModFilename);
                 var downloadResponse = client.send(HttpRequest.newBuilder().GET().uri(URI.create(encodePath(entry.getDownloadUrl()))).build(),
                         HttpResponse.BodyHandlers.ofInputStream());
                 if (downloadResponse.statusCode() != 200) {
-                    logger.error("Failed to download file: {}", downloadResponse.body());
-                    continue;
+                    throw new RuntimeException("Failed to download mod file: " + downloadResponse.statusCode());
                 }
 
                 try (var in = downloadResponse.body()) {
@@ -184,24 +192,65 @@ public class Updater {
                             out.write(buffer, 0, bytesRead);
                         }
                     }
+
+                    toMove.add(Pair.of(file, updatePath.resolve(updatedModFilename)));
                 } catch (IOException e) {
-                    logger.error("Failed to write file: {}", updatedModFilename, e);
-                    continue;
+                    throw new RuntimeException("Failed to download mod file: " + downloadResponse.statusCode(), e);
                 }
 
                 logger.info("Downloaded: {} -> {}", entry.getDownloadUrl(), file);
+            }
 
+
+        } catch (Exception e) {
+            logger.error("There was an error during the update process, aborting...", e);
+            success = false;
+        }
+
+        // If the update was successful, move the files to the mods folder
+        if (success) {
+            // Move the files to the mods folder
+            logger.info("Moving files to mods folder...");
+            for (var entry : toMove) {
+                var file = entry.getFirst();
+                var target = entry.getSecond();
+                try {
+                    Files.move(file, target);
+                    logger.info("Moved: {} -> {}", file, target);
                 } catch (IOException e) {
-                    logger.error("Failed to write file: {}", updatedModFilename, e);
+                    logger.error("Failed to move file: {} -> {}", file, target, e);
                 }
+            }
+
+            // Delete the removed mods
+            logger.info("Deleting removed mods...");
+            for (var entry : toRemove) {
+                try {
+                    Files.delete(entry);
+                    logger.info("Deleted: {}", entry);
+                } catch (IOException e) {
+                    logger.error("Failed to delete file: {}", entry, e);
+                }
+            }
+
+            // Delete the temporary directory
+            try (var stream = Files.walk(tmpDir)) {
+                stream.sorted(Comparator.reverseOrder())
+                        .forEach(path -> {
+                            try {
+                                Files.delete(path);
+                            } catch (IOException e) {
+                                logger.error("Failed to delete file: {}", path, e);
+                            }
+                        });
+            } catch (IOException e) {
+                logger.error("Failed to delete temporary directory: {}", tmpDir, e);
             }
 
             config.setCurrentVersion(latest);
             Config.save(configPath, config);
 
             logger.info("Update complete!");
-        } catch (IOException | InterruptedException e) {
-            logger.error("Failed while updating", e);
         }
 
         try {
