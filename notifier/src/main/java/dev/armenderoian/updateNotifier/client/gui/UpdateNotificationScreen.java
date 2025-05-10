@@ -49,7 +49,7 @@ public class UpdateNotificationScreen extends Screen {
                 Text.of("Update Now"), (pressed) -> {
                     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                         try {
-                            var file = FabricLoader.getInstance().getGameDir().resolve("mods").resolve("updater-1.0-SNAPSHOT.jar").toFile();
+                            var file = FabricLoader.getInstance().getGameDir().resolve("mods").resolve("updater.jar").toFile();
 
                             new ProcessBuilder("java", "-jar", file.getAbsolutePath())
                                     .directory(FabricLoader.getInstance().getGameDir().toFile())
