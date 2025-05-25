@@ -129,6 +129,7 @@ public class Updater {
             // Check if we need to update
             if (latest.getVersion().equals(currentVersion.getVersion())) {
                 logger.info("You are already on the latest version.");
+                Files.deleteIfExists(lockFile);
                 return;
             } else {
                 logger.info("A new version is available! Version: v{} - {}", latest.getVersion(), latest.getDescription());
@@ -170,7 +171,7 @@ public class Updater {
                     if (!Files.exists(removePath))
                         throw new RuntimeException("Trying to delete a file that does not exist: " + removePath.toAbsolutePath());
                     toRemove.add(removePath);
-                    continue;
+                    if (entry.getType() == UpdateEntry.Type.REMOVED) continue;
                 }
 
                 var updatedModFilename = entry.getFormattedFileName();
